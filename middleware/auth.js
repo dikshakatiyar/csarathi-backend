@@ -1,27 +1,60 @@
-const express = require('express');
-const router = express.Router();
-const authController = require('../controllers/authController');
-const { check } = require('express-validator');
-const validate = require('../middleware/validate');
+const jwt = require('jsonwebtoken');
+const { promisify } = require('util');
+const { StatusCodes } = require('http-status-codes');
+const User = require('../models/User');
 
-// Register
-router.post('/register', [
-  check('email').isEmail().normalizeEmail(),
-  check('password').isLength({ min: 8 }),
-  check('name').notEmpty().trim().escape(),
-  check('role').optional().isIn(['student', 'admin'])
-], validate, authController.register);
+exports.protect = async (req, res, next) => {
+  try {
+    // 1) Get token from header
+    let token;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer')
+    ) {
+      token = req.headers.authorization.split(' ')[1];
+    }
 
-// Login
-router.post('/login', [
-  check('email').isEmail().normalizeEmail(),
-  check('password').exists()
-], validate, authController.login);
+    if (!token) {
+      return res.status(StatusCodes.UNAUTHORIZED).json({
+        status: 'fail',
+        message: 'You are not logged in! Please log in to get access.'
+      });
+    }
 
-// Refresh Token
-router.post('/refresh-token', authController.refreshToken);
+    // 2) Verify token
+    const decoded = await promisify(jwt.verify)(
+      token,
+      process.env.JWT_ACCESS_SECRET
+    );
 
-// Logout
-router.post('/logout', authController.logout);
+    // 3) Check if user still exists
+    const currentUser = await User.findById(decoded.id);
+    if (!currentUser) {
+      return res.status(StatusCodes.UNAUTHORIZED).json({
+        status: 'fail',
+        message: 'The user belonging to this token no longer exists.'
+      });
+    }
 
-module.exports = router;
+    // 4) Grant access
+    req.user = currentUser;
+    next();
+  } catch (err) {
+    res.status(StatusCodes.UNAUTHORIZED).json({
+      status: 'fail',
+      message: 'Invalid or expired token!'
+    });
+  }
+};
+
+exports.restrictTo = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(StatusCodes.FORBIDDEN).json({
+        status: 'fail',
+        message: 'You do not have permission to perform this action'
+      });
+    }
+    next();
+  };
+};
