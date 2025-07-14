@@ -1,21 +1,24 @@
 const mongoose = require('mongoose');
 
-const FaqSchema = new mongoose.Schema({
-  question: { 
-    type: String, 
-    required: true,
-    trim: true
+const faqSchema = new mongoose.Schema({
+  question: {
+    type: String,
+    required: [true, 'Please add a question'],
+    unique: true
   },
-  answer: { 
-    type: String, 
-    required: true,
-    trim: true
+  answer: {
+    type: String,
+    required: [true, 'Please add an answer']
   },
-  category: { 
-    type: String, 
-    default: 'General',
-    trim: true
+  category: {
+    type: String,
+    required: [true, 'Please add a category'],
+    enum: ['academic', 'administrative', 'technical', 'other']
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
-}, { timestamps: true });
+});
 
-module.exports = mongoose.model('Faq', FaqSchema);
+module.exports = mongoose.model('FAQ', faqSchema);

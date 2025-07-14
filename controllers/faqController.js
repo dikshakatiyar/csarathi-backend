@@ -1,98 +1,83 @@
-const Faq = require('../models/Faq');
-const { StatusCodes } = require('http-status-codes');
+const FAQ = require('../models/FAQ');
+const ErrorResponse = require('../utils/errorResponse');
+const asyncHandler = require('../middleware/async');
 
-exports.getAllFaqs = async (req, res, next) => {
-  try {
-    const faqs = await Faq.find().sort('-createdAt');
-    res.status(StatusCodes.OK).json({
-      status: 'success',
-      results: faqs.length,
-      data: { faqs }
-    });
-  } catch (err) {
-    next(err);
-  }
-};
+// @desc    Get all FAQs
+// @route   GET /api/v1/faqs
+// @access  Public
+exports.getFAQs = asyncHandler(async (req, res, next) => {
+  res.status(200).json(res.advancedResults);
+});
 
-exports.createFaq = async (req, res, next) => {
-  try {
-    const faq = await Faq.create({
-      question: req.body.question,
-      answer: req.body.answer,
-      createdBy: req.user.id
-    });
+// @desc    Get single FAQ
+// @route   GET /api/v1/faqs/:id
+// @access  Public
+exports.getFAQ = asyncHandler(async (req, res, next) => {
+  const faq = await FAQ.findById(req.params.id);
 
-    res.status(StatusCodes.CREATED).json({
-      status: 'success',
-      data: { faq }
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-exports.updateFaq = async (req, res, next) => {
-  try {
-    const faq = await Faq.findByIdAndUpdate(
-      req.params.id,
-      {
-        question: req.body.question,
-        answer: req.body.answer,
-        updatedAt: Date.now()
-      },
-      { new: true, runValidators: true }
+  if (!faq) {
+    return next(
+      new ErrorResponse(`No FAQ found with the id of ${req.params.id}`, 404)
     );
-
-    if (!faq) {
-      return res.status(StatusCodes.NOT_FOUND).json({
-        status: 'fail',
-        message: 'No FAQ found with that ID'
-      });
-    }
-
-    res.status(StatusCodes.OK).json({
-      status: 'success',
-      data: { faq }
-    });
-  } catch (err) {
-    next(err);
   }
-};
 
-exports.deleteFaq = async (req, res, next) => {
-  try {
-    const faq = await Faq.findByIdAndDelete(req.params.id);
+  res.status(200).json({
+    success: true,
+    data: faq
+  });
+});
 
-    if (!faq) {
-      return res.status(StatusCodes.NOT_FOUND).json({
-        status: 'fail',
-        message: 'No FAQ found with that ID'
-      });
-    }
+// @desc    Create FAQ
+// @route   POST /api/v1/faqs
+// @access  Private/Admin
+exports.createFAQ = asyncHandler(async (req, res, next) => {
+  const faq = await FAQ.create(req.body);
 
-    res.status(StatusCodes.NO_CONTENT).send();
-  } catch (err) {
-    next(err);
+  res.status(201).json({
+    success: true,
+    data: faq
+  });
+});
+
+// @desc    Update FAQ
+// @route   PUT /api/v1/faqs/:id
+// @access  Private/Admin
+exports.updateFAQ = asyncHandler(async (req, res, next) => {
+  let faq = await FAQ.findById(req.params.id);
+
+  if (!faq) {
+    return next(
+      new ErrorResponse(`No FAQ found with the id of ${req.params.id}`, 404)
+    );
   }
-};
 
-exports.searchFaqs = async (req, res, next) => {
-  try {
-    const { q: searchQuery } = req.query;
+  faq = await FAQ.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true
+  });
 
-    const faqs = await Faq.find({
-      $or: [
-        { question: { $regex: searchQuery, $options: 'i' } },
-        { answer: { $regex: searchQuery, $options: 'i' } }
-      ]
-    }).sort('-createdAt');
+  res.status(200).json({
+    success: true,
+    data: faq
+  });
+});
 
-    res.status(StatusCodes.OK).json({
-      status: 'success',
-      results: faqs.length,
-      data: { faqs }
-    });
-  } catch (err) {
-    next(err);
+// @desc    Delete FAQ
+// @route   DELETE /api/v1/faqs/:id
+// @access  Private/Admin
+exports.deleteFAQ = asyncHandler(async (req, res, next) => {
+  const faq = await FAQ.findById(req.params.id);
+
+  if (!faq) {
+    return next(
+      new ErrorResponse(`No FAQ found with the id of ${req.params.id}`, 404)
+    );
   }
-};
+
+  await faq.remove();
+
+  res.status(200).json({
+    success: true,
+    data: {}
+  });
+});

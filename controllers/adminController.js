@@ -1,8 +1,8 @@
 const User = require('../models/User');
 const Ticket = require('../models/Ticket');
-const Faq = require('../models/Faq');
+const Faq = require('../models/FAQ');
 const { StatusCodes } = require('http-status-codes');
-const AppError = require('../utils/appError');
+const AppError = require('../utils/errorResponse');
 
 // User Management
 exports.getAllUsers = async (req, res, next) => {

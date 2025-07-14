@@ -1,128 +1,149 @@
 const Ticket = require('../models/Ticket');
+const ErrorResponse = require('../utils/errorResponse');
+const asyncHandler = require('../middleware/async');
 const User = require('../models/User');
-const { StatusCodes } = require('http-status-codes');
-const AppError = require('../utils/appError');
 
-// @desc    Create new ticket
-// @route   POST /api/v1/tickets
-// @access  Student
-exports.createTicket = async (req, res, next) => {
-  try {
-    // Verify user is a student
-    if (req.user.role !== 'student') {
-      throw new AppError(
-        'Only students can create tickets', 
-        StatusCodes.FORBIDDEN
-      );
-    }
+// @desc    Get all tickets
+// @route   GET /api/v1/tickets
+// @route   GET /api/v1/users/:userId/tickets
+// @access  Private/Admin
+exports.getTickets = asyncHandler(async (req, res, next) => {
+  if (req.params.userId) {
+    const tickets = await Ticket.find({ user: req.params.userId });
 
-    const ticket = await Ticket.create({
-      studentId: req.user.id,
-      title: req.body.title,
-      description: req.body.description,
-      priority: req.body.priority || 'medium'
+    return res.status(200).json({
+      success: true,
+      count: tickets.length,
+      data: tickets
     });
-
-    // Populate student details
-    await ticket.populate('studentId', 'name email');
-
-    res.status(StatusCodes.CREATED).json({
-      status: 'success',
-      data: { ticket }
-    });
-  } catch (err) {
-    next(err);
+  } else {
+    res.status(200).json(res.advancedResults);
   }
-};
-
-// @desc    Get logged-in user's tickets
-// @route   GET /api/v1/tickets/my-tickets
-// @access  Student
-exports.getMyTickets = async (req, res, next) => {
-  try {
-    const tickets = await Ticket.find({ studentId: req.user.id })
-      .sort('-createdAt')
-      .populate('studentId', 'name email');
-
-    res.status(StatusCodes.OK).json({
-      status: 'success',
-      results: tickets.length,
-      data: { tickets }
-    });
-  } catch (err) {
-    next(err);
-  }
-};
+});
 
 // @desc    Get single ticket
 // @route   GET /api/v1/tickets/:id
-// @access  Student (own tickets) or Admin
-exports.getTicket = async (req, res, next) => {
-  try {
-    const ticket = await Ticket.findById(req.params.id)
-      .populate('studentId', 'name email');
+// @access  Private
+exports.getTicket = asyncHandler(async (req, res, next) => {
+  const ticket = await Ticket.findById(req.params.id).populate({
+    path: 'user',
+    select: 'name email'
+  });
 
-    if (!ticket) {
-      throw new AppError(
-        'No ticket found with that ID', 
-        StatusCodes.NOT_FOUND
-      );
-    }
-
-    // Check authorization
-    if (
-      req.user.role !== 'admin' && 
-      ticket.studentId._id.toString() !== req.user.id
-    ) {
-      throw new AppError(
-        'Not authorized to access this ticket',
-        StatusCodes.FORBIDDEN
-      );
-    }
-
-    res.status(StatusCodes.OK).json({
-      status: 'success',
-      data: { ticket }
-    });
-  } catch (err) {
-    next(err);
+  if (!ticket) {
+    return next(
+      new ErrorResponse(`No ticket found with the id of ${req.params.id}`, 404)
+    );
   }
-};
 
-// @desc    Add response to ticket
-// @route   PATCH /api/v1/tickets/:id/response
-// @access  Admin
-exports.addResponse = async (req, res, next) => {
-  try {
-    // Verify admin role
-    if (req.user.role !== 'admin') {
-      throw new AppError(
-        'Only admins can respond to tickets',
-        StatusCodes.FORBIDDEN
-      );
-    }
-
-    const ticket = await Ticket.findByIdAndUpdate(
-      req.params.id,
-      { 
-        response: req.body.response,
-        status: 'in-progress' // Auto-update status
-      },
-      { new: true, runValidators: true }
-    ).populate('studentId', 'name email');
-
-    if (!ticket) {
-      throw new AppError(
-        'No ticket found with that ID',
-        StatusCodes.NOT_FOUND
-      );
-    }
-
-    res.status(StatusCodes.OK).json({
-      status: 'success',
-      data: { ticket }
-    });
-  } catch (err) {
-    next(err);
+  // Make sure user is ticket owner or admin
+  if (ticket.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(
+      new ErrorResponse(
+        `User ${req.user.id} is not authorized to access this ticket`,
+        401
+      )
+    );
   }
-};
+
+  res.status(200).json({
+    success: true,
+    data: ticket
+  });
+});
+
+// @desc    Create ticket
+// @route   POST /api/v1/tickets
+// @access  Private
+exports.createTicket = asyncHandler(async (req, res, next) => {
+  // Add user to req.body
+  req.body.user = req.user.id;
+
+  const ticket = await Ticket.create(req.body);
+
+  res.status(201).json({
+    success: true,
+    data: ticket
+  });
+});
+
+// @desc    Update ticket
+// @route   PUT /api/v1/tickets/:id
+// @access  Private
+exports.updateTicket = asyncHandler(async (req, res, next) => {
+  let ticket = await Ticket.findById(req.params.id);
+
+  if (!ticket) {
+    return next(
+      new ErrorResponse(`No ticket found with the id of ${req.params.id}`, 404)
+    );
+  }
+
+  // Make sure user is ticket owner or admin
+  if (ticket.user.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(
+      new ErrorResponse(
+        `User ${req.user.id} is not authorized to update this ticket`,
+        401
+      )
+    );
+  }
+
+  // If admin is resolving the ticket
+  if (req.body.status === 'resolved' && req.user.role === 'admin') {
+    req.body.resolvedAt = Date.now();
+  }
+
+  ticket = await Ticket.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true
+  });
+
+  res.status(200).json({
+    success: true,
+    data: ticket
+  });
+});
+
+// @desc    Delete ticket
+// @route   DELETE /api/v1/tickets/:id
+// @access  Private
+exports.deleteTicket = asyncHandler(async (req, res, next) => {
+  const ticket = await Ticket.findById(req.params.id);
+
+  if (!ticket) {
+    return next(
+      new ErrorResponse(`No ticket found with the id of ${req.params.id}`, 404)
+    );
+  }
+
+  // Make sure user is ticket owner or admin
+  if (ticket.user.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(
+      new ErrorResponse(
+        `User ${req.user.id} is not authorized to delete this ticket`,
+        401
+      )
+    );
+  }
+
+  await ticket.remove();
+
+  res.status(200).json({
+    success: true,
+    data: {}
+  });
+});
+
+// @desc    Get tickets for logged in user
+// @route   GET /api/v1/tickets/my-tickets
+// @access  Private
+exports.getMyTickets = asyncHandler(async (req, res, next) => {
+  const tickets = await Ticket.find({ user: req.user.id });
+
+  res.status(200).json({
+    success: true,
+    count: tickets.length,
+    data: tickets
+  });
+});

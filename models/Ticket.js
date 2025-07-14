@@ -1,36 +1,40 @@
 const mongoose = require('mongoose');
 
-const TicketSchema = new mongoose.Schema({
-  studentId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true 
+const ticketSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'User',
+    required: true
   },
-  title: { 
-    type: String, 
-    required: true,
-    trim: true
+  category: {
+    type: String,
+    required: [true, 'Please add a category'],
+    enum: ['academic', 'administrative', 'technical', 'other']
   },
-  description: { 
-    type: String, 
-    required: true,
-    trim: true
+  title: {
+    type: String,
+    required: [true, 'Please add a title'],
+    maxlength: [100, 'Title cannot be more than 100 characters']
   },
-  status: { 
-    type: String, 
-    enum: ['open', 'in-progress', 'resolved'], 
+  description: {
+    type: String,
+    required: [true, 'Please add a description']
+  },
+  status: {
+    type: String,
+    enum: ['open', 'in-progress', 'resolved'],
     default: 'open'
   },
-  priority: { 
-    type: String, 
-    enum: ['low', 'medium', 'high'], 
-    default: 'medium'
+  attachment: {
+    type: String
   },
-  response: { 
-    type: String, 
-    default: '',
-    trim: true
+  resolvedAt: {
+    type: Date
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
-}, { timestamps: true });
+});
 
-module.exports = mongoose.model('Ticket', TicketSchema);
+module.exports = mongoose.model('Ticket', ticketSchema);

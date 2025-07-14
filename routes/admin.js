@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/authController');
 const { check } = require('express-validator');
 
 // Protect all admin routes

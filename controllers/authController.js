@@ -1,175 +1,136 @@
-const jwt = require('jsonwebtoken');
-const { promisify } = require('util');
 const User = require('../models/User');
-const AppError = require('../utils/appError');
-const { StatusCodes } = require('http-status-codes');
+const ErrorResponse = require('../utils/errorResponse');
+const asyncHandler = require('../middleware/async');
+const jwt = require('jsonwebtoken');
 
-// Generate JWT tokens
-const signToken = (id, secret, expiresIn) => {
-  return jwt.sign({ id }, secret, { expiresIn });
-};
+// @desc    Register user
+// @route   POST /api/v1/auth/register
+// @access  Public
+exports.register = asyncHandler(async (req, res, next) => {
+  const { name, email, password, role } = req.body;
 
-// Cookie options
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'Strict',
-  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-};
+  // Create user
+  const user = await User.create({
+    name,
+    email,
+    password,
+    role
+  });
 
-// Register new user
-exports.register = async (req, res, next) => {
-  try {
-    const { email, password, name, role = 'student' } = req.body;
+  sendTokenResponse(user, 200, res);
+});
 
-    // Prevent duplicate emails
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      throw new AppError('Email already in use', StatusCodes.CONFLICT);
-    }
+// @desc    Login user
+// @route   POST /api/v1/auth/login
+// @access  Public
+exports.login = asyncHandler(async (req, res, next) => {
+  const { email, password } = req.body;
 
-    const newUser = await User.create({ email, password, name, role });
-
-    // Generate tokens
-    const accessToken = signToken(
-      newUser._id,
-      process.env.JWT_ACCESS_SECRET,
-      process.env.JWT_ACCESS_EXPIRES_IN
-    );
-
-    const refreshToken = signToken(
-      newUser._id,
-      process.env.JWT_REFRESH_SECRET,
-      process.env.JWT_REFRESH_EXPIRES_IN
-    );
-
-    // Save refreshToken to DB
-    newUser.refreshToken = refreshToken;
-    await newUser.save({ validateBeforeSave: false });
-
-    // Remove sensitive data
-    newUser.password = undefined;
-    newUser.refreshToken = undefined;
-
-    res.status(StatusCodes.CREATED)
-       .cookie('refreshToken', refreshToken, cookieOptions)
-       .json({
-         status: 'success',
-         accessToken,
-         data: { user: newUser }
-       });
-
-  } catch (err) {
-    next(err);
+  // Validate email & password
+  if (!email || !password) {
+    return next(new ErrorResponse('Please provide an email and password', 400));
   }
-};
 
-// Login user
-exports.login = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
+  // Check for user
+  const user = await User.findOne({ email }).select('+password');
 
-    // 1) Check if user exists
-    const user = await User.findOne({ email }).select('+password');
-    if (!user || !(await user.correctPassword(password))) {
-      throw new AppError('Incorrect email or password', StatusCodes.UNAUTHORIZED);
-    }
-
-    // 2) Generate tokens
-    const accessToken = signToken(
-      user._id,
-      process.env.JWT_ACCESS_SECRET,
-      process.env.JWT_ACCESS_EXPIRES_IN
-    );
-
-    const refreshToken = signToken(
-      user._id,
-      process.env.JWT_REFRESH_SECRET,
-      process.env.JWT_REFRESH_EXPIRES_IN
-    );
-
-    // 3) Save refreshToken to DB
-    user.refreshToken = refreshToken;
-    await user.save({ validateBeforeSave: false });
-
-    // 4) Send response
-    user.password = undefined;
-    user.refreshToken = undefined;
-
-    res.status(StatusCodes.OK)
-       .cookie('refreshToken', refreshToken, cookieOptions)
-       .json({
-         status: 'success',
-         accessToken,
-         data: { user }
-       });
-
-  } catch (err) {
-    next(err);
+  if (!user) {
+    return next(new ErrorResponse('Invalid credentials', 401));
   }
-};
 
-// Refresh access token
-exports.refreshToken = async (req, res, next) => {
-  try {
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
-    if (!refreshToken) {
-      throw new AppError('No refresh token provided', StatusCodes.UNAUTHORIZED);
-    }
+  // Check if password matches
+  const isMatch = await user.matchPassword(password);
 
-    // 1) Verify refresh token
-    const decoded = await promisify(jwt.verify)(
-      refreshToken,
-      process.env.JWT_REFRESH_SECRET
-    );
-
-    // 2) Check if user still exists
-    const user = await User.findById(decoded.id);
-    if (!user || user.refreshToken !== refreshToken) {
-      throw new AppError('Invalid refresh token', StatusCodes.FORBIDDEN);
-    }
-
-    // 3) Generate new tokens
-    const newAccessToken = signToken(
-      user._id,
-      process.env.JWT_ACCESS_SECRET,
-      process.env.JWT_ACCESS_EXPIRES_IN
-    );
-
-    const newRefreshToken = signToken(
-      user._id,
-      process.env.JWT_REFRESH_SECRET,
-      process.env.JWT_REFRESH_EXPIRES_IN
-    );
-
-    // 4) Update refreshToken in DB
-    user.refreshToken = newRefreshToken;
-    await user.save({ validateBeforeSave: false });
-
-    res.status(StatusCodes.OK)
-       .cookie('refreshToken', newRefreshToken, cookieOptions)
-       .json({
-         status: 'success',
-         accessToken: newAccessToken
-       });
-
-  } catch (err) {
-    next(err);
+  if (!isMatch) {
+    return next(new ErrorResponse('Invalid credentials', 401));
   }
-};
 
-// Logout user
-exports.logout = async (req, res, next) => {
-  try {
-    // 1) Clear refreshToken from DB
-    await User.findByIdAndUpdate(req.user.id, { refreshToken: null });
+  sendTokenResponse(user, 200, res);
+});
 
-    // 2) Clear cookie
-    res.clearCookie('refreshToken', cookieOptions)
-       .status(StatusCodes.OK)
-       .json({ status: 'success' });
+// @desc    Get current logged in user
+// @route   GET /api/v1/auth/me
+// @access  Private
+exports.getMe = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.user.id);
 
-  } catch (err) {
-    next(err);
+  res.status(200).json({
+    success: true,
+    data: user
+  });
+});
+
+// Get token from model, create cookie and send response
+const sendTokenResponse = (user, statusCode, res) => {
+  // Create token
+  const token = user.getSignedJwtToken();
+
+  const options = {
+    expires: new Date(
+      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
+    ),
+    httpOnly: true
+  };
+
+  if (process.env.NODE_ENV === 'production') {
+    options.secure = true;
   }
+
+  res
+    .status(statusCode)
+    .cookie('token', token, options)
+    .json({
+      success: true,
+      token
+    });
 };
+
+// @desc    Initialize sample users
+// @route   GET /api/v1/auth/init
+// @access  Public
+exports.initializeUsers = asyncHandler(async (req, res, next) => {
+  // Check if users already exist
+  const existingAdmin = await User.findOne({ email: 'admin@csarathi.com' });
+  const existingUser = await User.findOne({ email: 'user@csarathi.com' });
+
+  if (existingAdmin || existingUser) {
+    return res.status(400).json({
+      success: false,
+      message: 'Sample users already exist'
+    });
+  }
+
+  // Create admin user
+  const admin = await User.create({
+    name: 'Admin User',
+    email: 'admin@csarathi.com',
+    password: 'admin123',
+    role: 'admin'
+  });
+
+  // Create regular user
+  const user = await User.create({
+    name: 'Regular User',
+    email: 'user@csarathi.com',
+    password: 'user123',
+    role: 'user'
+  });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role
+      },
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    }
+  });
+});
