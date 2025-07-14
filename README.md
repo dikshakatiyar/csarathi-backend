@@ -4,7 +4,7 @@ Backend API for the C-Sarathi College Helpdesk system built with Node.js, Expres
 
 
 For production:
-When deploying, set the environment variable directly:
+When deploying, set the environment variable directly: 
 
 bash
 export NODE_ENV=production  # Linux/Mac
