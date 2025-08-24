@@ -11,3 +11,10 @@ const connectDB = async () => {
 };
 
 module.exports = connectDB;
+
+
+//This will create:
+
+//Admin user: admin@csarathi.com / admin123
+
+//Regular user: user@csarathi.com / user123

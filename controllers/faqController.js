@@ -66,18 +66,32 @@ exports.updateFAQ = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/v1/faqs/:id
 // @access  Private/Admin
 exports.deleteFAQ = asyncHandler(async (req, res, next) => {
-  const faq = await FAQ.findById(req.params.id);
+  try {
+    const faq = await FAQ.findById(req.params.id);
 
-  if (!faq) {
+    if (!faq) {
+      return next(
+        new ErrorResponse(`No FAQ found with the id of ${req.params.id}`, 404)
+      );
+    }
+
+    // Modern deletion method - choose one of these options:
+
+    // OPTION 1: Using deleteOne() (explicit)
+    // await FAQ.deleteOne({ _id: req.params.id });
+
+    // OPTION 2: Using findByIdAndDelete() (more concise)
+    await FAQ.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      data: {}
+    });
+
+  } catch (error) {
+    console.error('Error deleting FAQ:', error);
     return next(
-      new ErrorResponse(`No FAQ found with the id of ${req.params.id}`, 404)
+      new ErrorResponse('Failed to delete FAQ', 500)
     );
   }
-
-  await faq.remove();
-
-  res.status(200).json({
-    success: true,
-    data: {}
-  });
 });

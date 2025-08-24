@@ -5,7 +5,8 @@ const {
   createTicket,
   updateTicket,
   deleteTicket,
-  getMyTickets
+  getMyTickets,
+  addComment
 } = require('../controllers/ticketController');
 const { protect, authorize } = require('../middleware/authController');
 const advancedResults = require('../middleware/advancedResults');
@@ -27,5 +28,10 @@ router
   .get(protect, getTicket)
   .put(protect, updateTicket)
   .delete(protect, deleteTicket);
+
+// Admin comments endpoint
+router
+  .route('/:id/comments')
+  .post(protect, authorize('admin'), addComment);
 
 module.exports = router;

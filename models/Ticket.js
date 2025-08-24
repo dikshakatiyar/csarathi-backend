@@ -9,7 +9,8 @@ const ticketSchema = new mongoose.Schema({
   category: {
     type: String,
     required: [true, 'Please add a category'],
-    enum: ['academic', 'administrative', 'technical', 'other']
+    enum: ['academic', 'administrative', 'technical', 'facilities', 'other'],
+    trim: true
   },
   title: {
     type: String,
@@ -34,7 +35,21 @@ const ticketSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  // ... other fields ...
+  adminComments: [
+    {
+      comment: String,
+      admin: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User'
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ]
 });
 
 module.exports = mongoose.model('Ticket', ticketSchema);
